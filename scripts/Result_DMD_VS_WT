@@ -1,0 +1,54 @@
+###RESULT ANALYSIS
+
+
+# DMD_vs_WT
+
+DMD_vs_WT
+
+#Log fold change for visualization and ranking
+df1 <- lfcShrink(dds, coef = "genotype_DMD_vs_WT" , type = "apeglm")
+
+
+#MA plot
+plotMA(df1, ylim=c(-13,13))
+
+
+#Volcano plot
+
+df1 <- as.data.frame(df1)
+df1$genes <- rownames(df1)
+df1 <- df1[, c("genes" ,setdiff(names(df1), "genes"))]
+rownames(df1) <- NULL
+df1 <- df1[!is.na(df1$padj), ]
+df1_sig <- subset(df1, padj < 0.05 & abs(log2FoldChange) > 1)
+df1_sig <- df1_sig[order(-abs(df1_sig$log2FoldChange)), ]
+top <- df1_sig$genes[1:50]
+df1
+EnhancedVolcano(df1_sig, lab = df1_sig$genes, x = "log2FoldChange", y = "padj",selectLab = top, ylim = c(0, 100))
+
+
+
+
+# GENE SET ENRICHMENT ANALYSIS
+DMD_vs_WT <- as.data.frame(DMD_vs_WT)
+DMD_vs_WT$genes <- rownames(DMD_vs_WT)
+DMD_vs_WT <- DMD_vs_WT[, c("genes", setdiff(names(DMD_vs_WT), "genes"))]
+rownames(DMD_vs_WT) <- NULL
+write.csv(DMD_vs_WT, file = "Deseq_Result_table/DMD_vs_WT.csv", row.names = TRUE)
+deg <- read.csv("Deseq_Result_table/DMD_vs_WT.csv")
+
+# rank the genes
+deg_order_fc <- deg[order(-deg$log2FoldChange), ]
+
+
+# get logFC
+logfc <- deg_order_fc$log2FoldChange
+
+
+# make a named vector of logFC
+names(logfc) <- deg_order_fc$genes
+enrich_go_gsea <- gseGO(geneList = logfc, OrgDb = org.Hs.eg.db, ont = "ALL", pvalueCutoff = 0.05, keyType ="SYMBOL", verbose= FALSE)
+
+dotplot_enrich_go_gsea <- dotplot(enrich_go_gsea, showCategory = 30, orderBy="GeneRatio")
+
+
