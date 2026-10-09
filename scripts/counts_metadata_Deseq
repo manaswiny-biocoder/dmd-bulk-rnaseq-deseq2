@@ -1,0 +1,165 @@
+# This script carries of differential gene expression on the project(GSE312779)
+
+
+## Biological question we want to answer 
+
+#Q1 - Finding Transcriptional signatures and pathway regulated in
+#DMD patient-derived iPSCs differentiated into cardiomyocytes (DMD-CMs)
+#compared to compared with wild-type (WT) iPSC-derived cardiomyocytes.
+
+#Q2 - effects of drugs in DMD-CMs compared to WT-CMs
+
+
+
+# Load the libraries
+library(ggplot2)
+library(tidyverse)
+library(dplyr)
+library(GEOquery)
+library(DESeq2)
+library(pheatmap)
+library(RColorBrewer)
+library(apeglm)
+library(EnhancedVolcano)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(DOSE)
+library(enrichplot)
+
+# Read tab-delimited count file
+counts <- read.csv("D:/manu_bioinformatics/R_programming/Bulk_rna_seq_DESeq2/GSE312779_dmd_wt_all_raw_counts.csv.gz")
+
+# directories
+
+dir.create("QC_plots")
+dir.create("Deseq_Result_plots")
+dir.create("Deseq_Result_table")
+
+
+
+
+#get the metadata using GEOquery package 
+gse <- getGEO(GEO = "GSE312779" ,GSEMatrix = TRUE)
+length(gse)
+gse[1]
+metadata <- pData(phenoData(gse[[1]]))
+
+
+
+# modify counts matrix
+counts$X <- make.unique(as.character(counts$X)) # ensuring unique genes
+rownames(counts) <- counts[, 1]
+counts <- counts[, -1]
+
+
+
+# modify metadata
+metadata <- metadata %>% 
+  dplyr::select(c("description", "cell line:ch1","genotype:ch1","treatment:ch1")) %>% 
+  mutate(description = gsub("Library name: " , "" , description)) 
+colnames(metadata) <- gsub(":ch1", "", colnames(metadata))
+rownames(metadata) <- metadata[, 1]
+metadata <- metadata[, -1]
+
+# match the rownames of metadata to colnames of counts
+all(rownames(metadata) %in% colnames(counts))
+all(rownames(metadata) == colnames(counts))
+
+
+# set factor level
+metadata$genotype <- factor(metadata$genotype)
+metadata$treatment <- factor(metadata$treatment)
+
+
+# Constructing DESeqDataset object
+dds <- DESeqDataSetFromMatrix(countData = counts,
+                              colData = metadata,
+                              design = ~ genotype + treatment + genotype:treatment)
+
+# filtering genes less then  a threshold read counts
+keep <- rowSums(counts(dds)) >= 10
+dds <-dds[keep,]
+dds
+View(dds)
+
+
+## Exploratory analysis and visualization of the deseqdataset .
+## visually explore sample relationships.
+## filter out genes to reduce size of the object 
+
+
+# Variance stabilizing transformation 
+vst <-  vst(dds , blind = FALSE)
+View(vst)
+head(assay(vst), 3)
+colData(vst)
+
+# sample to sample distance
+sampleDists <- dist(t(assay(vst)))
+sampleDistsMatrix <- as.matrix(sampleDists)
+colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+sample_sample_dist <- pheatmap(sampleDistsMatrix,
+         clustering_distance_rows = sampleDists,
+         clustering_distance_cols = sampleDists,
+         col = colors)
+
+# PCA 
+PCA <- plotPCA(vst, intgroup=c("treatment"))
+pca_data <- plotPCA(
+  vst,
+  intgroup = c("genotype", "treatment"),
+  returnData = TRUE
+)
+
+
+
+
+##DIFFERENTIAL EXPRESSION ANALYSIS
+
+# set the reference level in factor
+dds$genotype <- relevel(dds$genotype, ref = "WT")
+dds$treatment <- relevel(dds$treatment, ref = "Vamorolone")
+
+
+# Run DESeq
+dds <- DESeq(dds)
+plotDispEsts(dds)
+
+resultsNames(dds)
+
+
+
+# DMD VS WT 
+DMD_vs_WT <- results(dds, contrast = c("genotype", "DMD", "WT"))
+summary(DMD_vs_WT)
+
+
+
+# AlDOSTERONE VS VAMOROLONE IN DMD
+res_DMD_ALD_vs_VAMO <- results(dds,contrast = list(c( "treatment_Aldosterone_vs_Vamorolone",
+      "genotypeDMD.treatmentAldosterone")))
+summary(res_DMD_ALD_vs_VAMO)
+
+
+# EPLERENONE VS VAMOROLONE IN DMD
+res_DMD_EPLE_vs_VAMO <- results(dds,contrast = list(c( "treatment_Eplerenone_vs_Vamorolone",
+                                                      "genotypeDMD.treatmentEplerenone")))
+summary(res_DMD_EPLE_vs_VAMO)
+
+
+
+# PREDNISOLONE VS VAMOROLONE IN DMD
+
+res_DMD_PRED_vs_VAMO <- results(dds,contrast = list(c( "treatment_Prednisolone_vs_Vamorolone",
+                                                       "genotypeDMD.treatmentPrednisolone")))
+summary(res_DMD_PRED_vs_VAMO)
+
+
+# DMSO VS VAMOROLONE IN DMD
+
+res_DMD_DMSO_vs_VAMO <- results(dds,contrast = list(c( "treatment_DMSO_vs_Vamorolone",
+                                                       "genotypeDMD.treatmentDMSO")))
+summary(res_DMD_DMSO_vs_VAMO)
+
+
+
